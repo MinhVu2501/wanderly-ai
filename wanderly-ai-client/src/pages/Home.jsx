@@ -3,11 +3,14 @@ import SearchBar from '../components/SearchBar.jsx';
 import PlaceCard from '../components/PlaceCard.jsx';
 import MapView from '../components/MapView.jsx';
 import { motion, AnimatePresence } from 'framer-motion';
+ 
 
 export default function Home() {
 	const [results, setResults] = useState(null);
 	const [isLoading, setIsLoading] = useState(false);
 	const [selectedIndex, setSelectedIndex] = useState(null);
+
+	 
 
 	return (
 		<div className="p-6 max-w-6xl mx-auto">
@@ -29,7 +32,9 @@ export default function Home() {
 							transition={{ duration: 0.25 }}
 						>
 							<h2 className="text-lg font-semibold mb-2">AI Summary</h2>
-							<p className="bg-white border rounded p-3 shadow-sm">{results.ai_summary}</p>
+							<p className="bg-white border rounded p-3 shadow-sm">
+								{results.ai_summary || results.ai_summary_en || results.ai_summary_vi || 'No AI summary available.'}
+							</p>
 						</motion.div>
 					</AnimatePresence>
 					<h3 className="mt-6 font-bold">Places</h3>

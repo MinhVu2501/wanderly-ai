@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, /* Polyline, */ useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, /* Polyline, */ useMap, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { API_BASE } from '../lib/config.js';
@@ -30,7 +30,7 @@ function SelectedController({ positions, selectedIndex, markerRefs }) {
 	return null;
 }
 
-export default function MapView({ places = [], loading = false, selectedIndex = null }) {
+export default function MapView({ places = [], loading = false, selectedIndex = null, onMarkerSelect }) {
 	const positions = useMemo(() => {
 		return places
 			.map((p) => {
@@ -72,6 +72,7 @@ export default function MapView({ places = [], loading = false, selectedIndex = 
 				const name = p.name ?? p.name_en ?? p.name_vi ?? 'Unknown';
 				const rating = p.avg_rating ?? p.rating ?? 'N/A';
 				const photoRef = p.photoRef;
+				const isSelected = typeof selectedIndex === 'number' && selectedIndex === i;
 				return (
 					<Marker
 						key={`${p.id}-${i}`}
@@ -80,7 +81,24 @@ export default function MapView({ places = [], loading = false, selectedIndex = 
 						ref={(ref) => {
 							markerRefs.current[i] = ref;
 						}}
+						zIndexOffset={isSelected ? 500 : 0}
+						eventHandlers={{
+							click: () => {
+								onMarkerSelect?.(i);
+							},
+						}}
 					>
+						<Tooltip
+							direction="top"
+							offset={[0, -28]}
+							opacity={1}
+							permanent={isSelected}
+							sticky
+						>
+							<div className="map-label">
+								<span className="map-label-text">{name}</span>
+							</div>
+						</Tooltip>
 						<Popup>
 							<strong>{name}</strong>
 							<br />

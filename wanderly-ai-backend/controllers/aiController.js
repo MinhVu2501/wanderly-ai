@@ -46,6 +46,8 @@ export async function searchAIPlaces(req, res) {
 
 		// Prefer Google Places (then DB). Yelp remains disabled for now.
 		const googleApiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_API_KEY;
+		const GOOGLE_TIMEOUT_MS = 3000;
+		const OPENAI_TIMEOUT_MS = 7000;
 		let places = [];
 		let source = 'db';
 
@@ -58,6 +60,7 @@ export async function searchAIPlaces(req, res) {
 						key: googleApiKey,
 						language: lang,
 					},
+					timeout: GOOGLE_TIMEOUT_MS,
 				});
 				const results = googleRes?.data?.results ?? [];
 				if (Array.isArray(results) && results.length > 0) {
@@ -134,43 +137,168 @@ export async function searchAIPlaces(req, res) {
 			place.avg_rating = avg;
 		}
 
-		// Build single-language summary prompt
-		let aiText = null;
+		// Build AI JSON details with estimated waiting time (EN + VI)
+		let aiData = null;
+		let aiSummaryEn = null;
+		let aiSummaryVi = null;
+		const withTimeout = (promise, ms) =>
+			Promise.race([
+				promise,
+				new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+			]);
 		if (openaiApiKey) {
-			const languageName = lang === 'vi' ? 'Vietnamese' : 'English';
 			const prompt = `
-You are Wanderly AI, a travel assistant. Respond ONLY in ${languageName}.
-Summarize and recommend the following places based on ratings and any available comments.
-Keep it concise (2–4 sentences).
+You are Wanderly AI. For each place, generate:
+- name_en, name_vi (you may copy the name for both if unknown)
+- summary_en (2-3 concise sentences), summary_vi (Vietnamese translation, 2-3 sentences)
+- estimated_wait_minutes (an integer, typical dining wait estimation based on category/city/peak hours)
+
+Return ONLY valid JSON array, no code fences, no extra text. Shape:
+[
+  {
+    "name_en": "...",
+    "name_vi": "...",
+    "summary_en": "...",
+    "summary_vi": "...",
+    "estimated_wait_minutes": 15
+  }
+]
 
 User Query: "${query ?? ''}" in "${location ?? ''}"
-
-Places data:
-${JSON.stringify(places, null, 2)}
-
-Output: One short paragraph in ${languageName} only.
+Places Data: ${JSON.stringify(places, null, 2)}
 `;
 			try {
-				const aiRes = await openai.chat.completions.create({
-					model: 'gpt-4o-mini',
-					messages: [{ role: 'user', content: prompt }],
-				});
-				aiText = aiRes.choices?.[0]?.message?.content ?? null;
+				const aiRes = await withTimeout(
+					openai.chat.completions.create({
+						model: 'gpt-4o-mini',
+						messages: [{ role: 'user', content: prompt }],
+						temperature: 0.6,
+					}),
+					OPENAI_TIMEOUT_MS
+				);
+				let raw = (aiRes?.choices?.[0]?.message?.content ?? '');
+				raw = (raw || '').trim();
+				// Try direct JSON parse, then fallback to extracting first JSON array/object
+				try {
+					aiData = JSON.parse(raw);
+				} catch {
+					const match = raw.match(/(\[.*\]|\{.*\})/s);
+					if (match) {
+						try {
+							aiData = JSON.parse(match[0]);
+						} catch {
+							aiData = null;
+						}
+					}
+				}
+				// Ensure array
+				if (!Array.isArray(aiData)) {
+					aiData = null;
+				}
 			} catch (aiErr) {
 				console.warn('OpenAI request failed:', aiErr?.message);
-				aiText = null; // continue without failing the endpoint
+				aiData = null; // continue without failing the endpoint
+			}
+
+			// Also request a bilingual summary (2 short paragraphs)
+			const summaryPrompt = `
+You are Wanderly AI, a bilingual travel assistant.
+Match the paragraph style in the reference screenshot: confident, natural English, proper sentences, bolded place names, ratings in parentheses, and mention review counts when available.
+
+OUTPUT: EXACTLY two paragraphs (no headings, no bullets, no labels):
+1) ENGLISH (2–4 sentences, ~55–90 words). Use this structure and tone:
+   - Sentence 1: "For a great ${query ?? ''} in ${location ?? ''}, I recommend **{place1}** ( {rating1}/5{, from {reviews1} reviews} ), making it a standout for {cuisine/category if obvious}."
+   - Sentence 2: "Another excellent choice is **{place2}** ( {rating2}/5{, from {reviews2} reviews} )."
+   - Sentence 3–4 (optional): "If you're looking for more options, **{place3}** and **{place4}** both maintain strong ratings of {rating3} and {rating4}, respectively, and receive positive feedback."
+   Fill curly‑brace fields with real data from the provided Places; omit unavailable pieces gracefully. Do NOT include tips like "arrive early".
+2) VIETNAMESE: a natural translation of the English paragraph.
+
+STYLE RULES:
+- Paragraphs only; no labels like "English:" or "Vietnamese:".
+- Bold names like **PhoLove**. Show ratings as (4.7/5) and, if present, include "from N reviews".
+- Avoid repeating the city name more than once.
+- Do not invent addresses; rely only on given data.
+- Keep sentences tight, readable, and in active voice.
+
+PLACES (use up to 6 most relevant):
+${JSON.stringify(places.slice(0, 6), null, 2)}
+`;
+			try {
+				const aiRes2 = await withTimeout(
+					openai.chat.completions.create({
+						model: 'gpt-4o-mini',
+						messages: [{ role: 'user', content: summaryPrompt }],
+						temperature: 0.4,
+					}),
+					OPENAI_TIMEOUT_MS
+				);
+				const text = ((aiRes2?.choices?.[0]?.message?.content) ?? '').trim();
+				// naive split by double newline into two paragraphs
+				const parts = text.split(/\n\s*\n/);
+				if (parts.length >= 2) {
+					aiSummaryEn = parts[0];
+					aiSummaryVi = parts[1];
+				} else {
+					aiSummaryEn = text;
+					aiSummaryVi = null;
+				}
+			} catch (errSummary) {
+				console.warn('OpenAI summary failed:', errSummary?.message);
 			}
 		}
 
 		return res.json({
 			places,
-			ai_summary: aiText,
+			ai_details: Array.isArray(aiData) && aiData.length > 0 ? aiData : fallbackSummaries(places, lang, location),
+			ai_summary_en: aiSummaryEn ?? fallbackSummaryText(places, location, 'en'),
+			ai_summary_vi: aiSummaryVi ?? fallbackSummaryText(places, location, 'vi'),
 			source,
 		});
 	} catch (error) {
 		console.error(error);
 		return res.status(500).json({ error: 'AI search failed' });
 	}
+}
+
+function fallbackSummaries(places, lang, location) {
+	// Basic heuristic for estimated wait time
+	function estimateWait(rating, total) {
+		const base = 10;
+		const busyBonus = Math.min(20, Math.floor((total || 0) / 500) * 5); // more reviews -> busier
+		const ratingAdj = rating ? Math.max(0, Math.floor((rating - 3.5) * 5)) : 0; // higher rating -> more demand
+		const est = base + busyBonus + ratingAdj;
+		return Math.max(5, Math.min(est, 45));
+	}
+	return (places || []).map((p) => {
+		const name = p.name || p.name_en || p.name_vi || 'Unknown';
+		const rating = p.rating ?? p.avg_rating ?? null;
+		const total = p.user_ratings_total ?? null;
+		const address = p.address || p.formatted_address || '';
+		const wait = estimateWait(rating, total);
+		const summaryEn = `Popular spot in ${location || 'this area'}${rating ? ` (rating ${rating}/5)` : ''}. Expect around ${wait} minutes of waiting during typical hours. ${address ? `Address: ${address}.` : ''}`;
+		const summaryVi = `Địa điểm được ưa chuộng tại ${location || 'khu vực này'}${rating ? ` (điểm đánh giá ${rating}/5)` : ''}. Ước tính chờ khoảng ${wait} phút vào giờ cao điểm. ${address ? `Địa chỉ: ${address}.` : ''}`;
+		return {
+			name_en: name,
+			name_vi: name,
+			summary_en: summaryEn,
+			summary_vi: summaryVi,
+			estimated_wait_minutes: wait,
+		};
+	});
+}
+
+function fallbackSummaryText(places, location, lang = 'en') {
+	const top = (places || []).slice(0, 5);
+	const city = location || 'this area';
+	const parts = top.map((p) => {
+		const name = p.name || p.name_en || p.name_vi || 'Unknown';
+		const rating = p.rating ?? p.avg_rating;
+		return `**${name}**${rating ? ` (${Number(rating).toFixed(1)}/5)` : ''}`;
+	});
+	if (lang === 'vi') {
+		return `Tại ${city}, các lựa chọn nổi bật gồm ${parts.join(', ')}. Đây đều là những địa điểm được đánh giá cao với hương vị ổn định và phục vụ thân thiện. Hãy đến sớm hoặc tránh giờ cao điểm để có trải nghiệm thoải mái hơn.`;
+	}
+	return `In ${city}, top picks include ${parts.join(', ')}. These spots are well‑rated for consistent flavors and friendly service. Arrive early or avoid peak hours for a smoother experience.`;
 }
 
 // Proxy Google Places photo to avoid exposing API key to the client

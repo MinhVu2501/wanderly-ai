@@ -1,10 +1,14 @@
 import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { API_BASE } from '../lib/config.js';
 import RatingStars from './RatingStars.jsx';
 
 export default function PlaceCard({ place, index, onClick, selected = false }) {
 	const name = place.name ?? place.name_en ?? place.name_vi ?? 'Unknown';
 	const rating = place.avg_rating ?? place.rating ?? null;
 	const isNew = place.user_created === true;
+	const [userWait, setUserWait] = useState('');
+	const [submitMsg, setSubmitMsg] = useState('');
 
 	return (
 		<motion.div
@@ -31,6 +35,54 @@ export default function PlaceCard({ place, index, onClick, selected = false }) {
 					))}
 				</ul>
 			)}
+
+			{/* Submit Wait Time (anonymous MVP) */}
+			<div
+				className="flex items-center gap-2 mt-3"
+				onClick={(e) => {
+					// Prevent parent card click from triggering map focus when interacting with inputs
+					e.stopPropagation();
+				}}
+			>
+				<input
+					type="number"
+					min="1"
+					placeholder="Your wait time (min)"
+					value={userWait}
+					onChange={(e) => setUserWait(e.target.value)}
+					className="border border-gray-300 rounded px-2 py-1 w-40"
+				/>
+				<button
+					onClick={async () => {
+						if (!userWait) return;
+						setSubmitMsg('');
+						try {
+							const res = await fetch(`${API_BASE}/api/wait-time`, {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({
+									place_id: place.id,
+									wait_minutes: parseInt(userWait, 10),
+								}),
+							});
+							const data = await res.json();
+							if (data?.success) {
+								setSubmitMsg(data?.message || 'Thanks!');
+								setUserWait('');
+							} else {
+								setSubmitMsg(data?.error || 'Failed to submit wait time.');
+							}
+						} catch (err) {
+							setSubmitMsg('Failed to submit wait time.');
+							console.error(err);
+						}
+					}}
+					className="bg-[#1F8EF1] hover:bg-blue-600 text-white px-3 py-1 rounded"
+				>
+					Submit
+				</button>
+			</div>
+			{submitMsg ? <p className="text-green-600 mt-1 text-sm">{submitMsg}</p> : null}
 		</motion.div>
 	);
 }
