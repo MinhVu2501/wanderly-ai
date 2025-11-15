@@ -16,9 +16,11 @@ export default function Header() {
 					Wanderly AI
 				</Link>
 				<div className="flex gap-4 items-center">
-					<Link to="/add" className="bg-[#F2B138] text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition">
+					{/* <Link to="/" className="text-blue-600 hover:underline">Trip Planner</Link> */}
+					{/* <Link to="/explore" className="text-slate-700 hover:underline">Explore (Search)</Link> */}
+					{/* <Link to="/add" className="bg-[#F2B138] text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition">
 						Add Place
-					</Link>
+					</Link> */}
 					<button onClick={switchLang} className="px-2 py-1 rounded-lg border text-slate-700 hover:bg-slate-50">
 						{i18n.language === 'en' ? '🇺🇸 EN' : '🇻🇳 VI'}
 					</button>

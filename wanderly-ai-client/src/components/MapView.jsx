@@ -86,6 +86,9 @@ export default function MapView({ places = [], loading = false, selectedIndex = 
 							click: () => {
 								onMarkerSelect?.(i);
 							},
+							mouseover: () => {
+								onMarkerSelect?.(i);
+							},
 						}}
 					>
 						<Tooltip
@@ -97,6 +100,16 @@ export default function MapView({ places = [], loading = false, selectedIndex = 
 						>
 							<div className="map-label">
 								<span className="map-label-text">{name}</span>
+								{photoRef ? (
+									<img
+										src={`${API_BASE}/api/ai/photo?ref=${encodeURIComponent(photoRef)}`}
+										alt={name}
+										width="200"
+										height="130"
+										style={{ display: 'block', marginTop: 6, borderRadius: 6 }}
+										loading="lazy"
+									/>
+								) : null}
 							</div>
 						</Tooltip>
 						<Popup>

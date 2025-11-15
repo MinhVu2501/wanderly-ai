@@ -3,12 +3,14 @@ import SearchBar from '../components/SearchBar.jsx';
 import PlaceCard from '../components/PlaceCard.jsx';
 import MapView from '../components/MapView.jsx';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
  
 
 export default function Home() {
-	const [results, setResults] = useState(null);
+  const [results, setResults] = useState(null);
 	const [isLoading, setIsLoading] = useState(false);
 	const [selectedIndex, setSelectedIndex] = useState(null);
+  const { i18n } = useTranslation();
 
 	 
 
@@ -19,7 +21,12 @@ export default function Home() {
 				<div className="mt-8 grid grid-cols-1 md:grid-cols-5 gap-6">
 					<div className="md:col-span-3">
 						<div className="overflow-hidden rounded-lg border">
-							<MapView places={results.places} loading={isLoading} selectedIndex={selectedIndex} />
+							<MapView
+                places={results.places}
+                loading={isLoading}
+                selectedIndex={selectedIndex}
+                onMarkerSelect={(idx) => setSelectedIndex(idx)}
+              />
 						</div>
 					</div>
 					<div className="md:col-span-2">
@@ -32,9 +39,12 @@ export default function Home() {
 							transition={{ duration: 0.25 }}
 						>
 							<h2 className="text-lg font-semibold mb-2">AI Summary</h2>
-							<p className="bg-white border rounded p-3 shadow-sm">
-								{results.ai_summary || results.ai_summary_en || results.ai_summary_vi || 'No AI summary available.'}
-							</p>
+                <p className="bg-white border rounded p-3 shadow-sm">
+                  {i18n.language === 'vi'
+                    ? (results.ai_summary_vi || results.ai_summary_en || results.ai_summary || 'No AI summary available.')
+                    : (results.ai_summary_en || results.ai_summary || results.ai_summary_vi || 'No AI summary available.')
+                  }
+                </p>
 						</motion.div>
 					</AnimatePresence>
 					<h3 className="mt-6 font-bold">Places</h3>

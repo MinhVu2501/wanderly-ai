@@ -7,6 +7,8 @@ import aiRoutes from './routes/aiRoutes.js';
 import placeRoutes from './routes/placeRoutes.js';
 import commentRoutes from './routes/commentRoutes.js';
 import waitRoutes from './routes/waitRoutes.js';
+import tripRoutes from './routes/tripRoutes.js';
+import resolveRoutes from './routes/resolveRoutes.js';
 import pool from './db.js';
 
 const app = express();
@@ -31,6 +33,8 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/places', placeRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/wait-time', waitRoutes);
+app.use('/api/trip-plan', tripRoutes);
+app.use('/api/resolve-place', resolveRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;
