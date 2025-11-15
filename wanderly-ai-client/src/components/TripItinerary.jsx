@@ -1,3 +1,4 @@
+// src/components/TripItinerary.jsx
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { API_BASE } from '../lib/config.js';
@@ -37,7 +38,10 @@ export default function TripItinerary({ plan }) {
   useEffect(() => {
     if (!hasDaily) return;
 
-    const maxToResolve = 20;
+    const totalBlocks = Array.isArray(plan.daily)
+      ? plan.daily.reduce((sum, d) => sum + ((d.items || []).length), 0)
+      : 0;
+    const maxToResolve = Math.min(totalBlocks || 0, 50);
     let cancelled = false;
 
     const run = async () => {
@@ -90,11 +94,11 @@ export default function TripItinerary({ plan }) {
           }
 
           count++;
-          if (count >= maxToResolve) break;
+          if (maxToResolve && count >= maxToResolve) break;
           await new Promise((r) => setTimeout(r, 150)); // avoid hammering Google
         }
 
-        if (count >= maxToResolve) break;
+        if (maxToResolve && count >= maxToResolve) break;
       }
     };
 
@@ -196,118 +200,166 @@ export default function TripItinerary({ plan }) {
               <div key={day.day} className="border rounded-lg p-3 space-y-3">
                 <div className="font-semibold mb-1">
                   Day {day.day}
-                  {day.title ? ` — ${day.title}` : day.date_hint ? ` — ${day.date_hint}` : ''}
+                  {day.title
+                    ? ` — ${day.title}`
+                    : day.date_hint
+                    ? ` — ${day.date_hint}`
+                    : ''}
                 </div>
 
-                {/* Map for this specific day */}
-                {dayStops.length >= 2 && (
-                  <div className="mb-3">
-                    <TripRouteMap
-                      stops={dayStops}
-                      doRouting={day.day === (plan.daily?.[0]?.day)}
-                    />
-                  </div>
-                )}
+                <div className="md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:gap-4">
+                  {/* Sticky map on desktop */}
+                  {dayStops.length >= 1 && (
+                    <div className="mb-3 md:mb-0 md:sticky md:top-20 h-[260px]">
+                      <TripRouteMap
+                        stops={dayStops}
+                        doRouting={day.day === plan.daily?.[0]?.day}
+                      />
+                    </div>
+                  )}
 
-                {/* Blocks & options */}
-                <ul className="space-y-2">
-                  {(day.items || []).map((block, blockIdx) => {
-                    const time = block?.time;
-                    const label = block?.label || block?.block_type || '';
-                    const selIdx =
-                      selectedOptions[`${day.day}-${blockIdx}`] != null
-                        ? selectedOptions[`${day.day}-${blockIdx}`]
-                        : 0;
+                  {/* Blocks & options */}
+                  <ul className="space-y-2">
+                    {(day.items || []).map((block, blockIdx) => {
+                      const time = block?.time;
+                      const label = block?.label || block?.block_type || '';
+                      const selIdx =
+                        selectedOptions[`${day.day}-${blockIdx}`] != null
+                          ? selectedOptions[`${day.day}-${blockIdx}`]
+                          : 0;
 
-                    return (
-                      <li key={blockIdx} className="text-sm border rounded p-2">
-                        <div className="mb-1">
-                          <span className="font-medium">{time}</span>{' '}
-                          {label && <span className="font-semibold"> — {label}</span>}
-                        </div>
+                      return (
+                        <li
+                          key={blockIdx}
+                          className="text-sm border rounded p-2 bg-white"
+                        >
+                          <div className="mb-1">
+                            <span className="font-medium">{time}</span>{' '}
+                            {label && (
+                              <span className="font-semibold">
+                                {' '}
+                                — {label}
+                              </span>
+                            )}
+                          </div>
 
-                        <div className="grid md:grid-cols-2 gap-2">
-                          {(block.options || []).map((opt, optIdx) => {
-                            const displayName = opt.name || opt.title || `Option ${optIdx + 1}`;
-                            const cost =
-                              opt.cost_estimate?.amount != null
-                                ? `${opt.cost_estimate.amount} ${
-                                    opt.cost_estimate.currency ||
-                                    plan?.meta?.currency ||
-                                    ''
-                                  }`
-                                : null;
+                          <div className="grid md:grid-cols-2 gap-2">
+                            {(block.options || []).map((opt, optIdx) => {
+                              const displayName =
+                                opt.name ||
+                                opt.title ||
+                                `Option ${optIdx + 1}`;
+                              const cost =
+                                opt.cost_estimate?.amount != null
+                                  ? `${opt.cost_estimate.amount} ${
+                                      opt.cost_estimate.currency ||
+                                      plan?.meta?.currency ||
+                                      ''
+                                    }`
+                                  : null;
 
-                            const key = `${day.day}-${blockIdx}-${optIdx}`;
-                            const r = resolved[key];
-                            const isSelected = selIdx === optIdx;
+                              const key = `${day.day}-${blockIdx}-${optIdx}`;
+                              const r = resolved[key];
+                              const isSelected = selIdx === optIdx;
 
-                            return (
-                              <div
-                                key={optIdx}
-                                className={
-                                  'border rounded p-2 bg-gray-50 transition-colors ' +
-                                  (isSelected ? 'bg-blue-50 border-blue-400' : '')
-                                }
-                              >
-                                <div className="font-semibold">{displayName}</div>
-                                {opt.type && (
-                                  <div className="text-xs uppercase text-gray-500">
-                                    {opt.type}
-                                  </div>
-                                )}
-                                {opt.description && (
-                                  <div className="text-xs text-gray-700 mt-1">
-                                    {opt.description}
-                                  </div>
-                                )}
-                                {(r?.data?.address || opt.address) && (
-                                  <div className="text-xs text-gray-600 mt-1">
-                                    {opt.address || r?.data?.address}
-                                  </div>
-                                )}
-                                <div className="text-xs text-gray-500 mt-1">
-                                  {opt.duration_min ? <>⏱ {opt.duration_min} min · </> : null}
-                                  {opt.transport ? <>{opt.transport}</> : null}
-                                </div>
-                                {cost && (
-                                  <div className="text-xs text-gray-700 mt-1">
-                                    Avg cost: {cost}
-                                  </div>
-                                )}
-
-                                <button
+                              return (
+                                <div
+                                  key={optIdx}
                                   className={
-                                    'mt-2 inline-block text-xs px-2 py-1 rounded border ' +
+                                    'border rounded p-2 bg-gray-50 transition-colors ' +
                                     (isSelected
-                                      ? 'bg-blue-500 text-white border-blue-500'
-                                      : 'bg-white text-blue-600 border-blue-500')
+                                      ? 'bg-blue-50 border-blue-400'
+                                      : '')
                                   }
-                                  onClick={() =>
-                                    handleResolveOption(day.day, blockIdx, optIdx, opt)
-                                  }
-                                  disabled={r?.loading}
                                 >
-                                  {isSelected
-                                    ? r?.loading
-                                      ? 'Updating...'
-                                      : 'Selected'
-                                    : r?.loading
-                                    ? 'Resolving...'
-                                    : 'Choose this option'}
-                                </button>
+                                  <div className="font-semibold">
+                                    {displayName}
+                                  </div>
+                                  {opt.type && (
+                                    <div className="text-xs uppercase text-gray-500">
+                                      {opt.type}
+                                    </div>
+                                  )}
+                                  {opt.description && (
+                                    <div className="text-xs text-gray-700 mt-1">
+                                      {opt.description}
+                                    </div>
+                                  )}
+                                  {(r?.data?.address || opt.address) && (
+                                    <div className="text-xs text-gray-600 mt-1">
+                                      {opt.address || r?.data?.address}
+                                    </div>
+                                  )}
 
-                                {r?.error && (
-                                  <div className="text-xs text-red-600 mt-1">{r.error}</div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
+                                  {/* Duration, transport & distance */}
+                                  <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+                                    {(opt.duration_min || opt.transport) && (
+                                      <div>
+                                        {opt.duration_min ? (
+                                          <>⏱ {opt.duration_min} min</>
+                                        ) : null}
+                                        {opt.transport && (
+                                          <>
+                                            {opt.duration_min ? ' · ' : ''}
+                                            {opt.transport}
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+                                    {opt.distance_from_previous && (
+                                      <div>
+                                        📍 From previous:{' '}
+                                        {opt.distance_from_previous}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {cost && (
+                                    <div className="text-xs text-gray-700 mt-1">
+                                      Avg cost: {cost}
+                                    </div>
+                                  )}
+
+                                  <button
+                                    className={
+                                      'mt-2 inline-block text-xs px-2 py-1 rounded border ' +
+                                      (isSelected
+                                        ? 'bg-blue-500 text-white border-blue-500'
+                                        : 'bg-white text-blue-600 border-blue-500')
+                                    }
+                                    onClick={() =>
+                                      handleResolveOption(
+                                        day.day,
+                                        blockIdx,
+                                        optIdx,
+                                        opt
+                                      )
+                                    }
+                                    disabled={r?.loading}
+                                  >
+                                    {isSelected
+                                      ? r?.loading
+                                        ? 'Updating...'
+                                        : 'Selected'
+                                      : r?.loading
+                                      ? 'Resolving...'
+                                      : 'Choose this option'}
+                                  </button>
+
+                                  {r?.error && (
+                                    <div className="text-xs text-red-600 mt-1">
+                                      {r.error}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               </div>
             );
           })}
@@ -321,22 +373,36 @@ export default function TripItinerary({ plan }) {
             {plan.hotels.map((h, i) => (
               <li key={i}>
                 <span className="font-medium">{h.name}</span>
+
+                {/* PRICE */}
                 {h.nightly_price?.amount != null ? (
                   <span className="text-gray-600">
-                    {' '}
-                    · Avg nightly: {h.nightly_price.amount}{' '}
-                    {h.nightly_price.currency || plan?.meta?.currency || ''}
-                  </span>
-                ) : h.price_level ? (
-                  <span className="text-gray-600">
-                    {' '}
-                    · Avg nightly: {approxHotelFromLevel(h.price_level, plan?.meta?.currency)}
+                    {' '}· Avg nightly: {h.nightly_price.amount}{' '}
+                    {h.nightly_price.currency || plan?.meta?.currency}
                   </span>
                 ) : null}
+
+                {/* RATING */}
+                {h.rating && (
+                  <span className="text-gray-600"> · ⭐ {h.rating}/5</span>
+                )}
+
+                {/* CHECK-IN */}
                 {h.check_in && (
                   <span className="text-gray-600"> · Check-in {h.check_in}</span>
                 )}
-                {h.reason && <div className="text-gray-700">{h.reason}</div>}
+
+                {/* AMENITIES */}
+                {h.amenities?.length > 0 && (
+                  <div className="text-gray-600 text-xs mt-1">
+                    {h.amenities.join(' • ')}
+                  </div>
+                )}
+
+                {/* REASON */}
+                {h.reason && (
+                  <div className="text-gray-700 text-sm">{h.reason}</div>
+                )}
               </li>
             ))}
           </ul>
@@ -347,9 +413,14 @@ export default function TripItinerary({ plan }) {
         <div>
           <div className="font-semibold mb-1">Tips</div>
           <ul className="list-disc pl-5 space-y-1 text-sm">
-            {plan.tips.map((tip, i) => (
-              <li key={i}>{tip}</li>
-            ))}
+            {plan.tips.map((tip, i) => {
+              const text =
+                typeof tip === 'string'
+                  ? tip
+                  : (tip && (tip.tip || tip.text || tip.message)) || '';
+              if (!text) return null;
+              return <li key={i}>{text}</li>;
+            })}
           </ul>
         </div>
       )}
