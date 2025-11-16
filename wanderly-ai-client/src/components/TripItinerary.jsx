@@ -4,6 +4,61 @@ import axios from 'axios';
 import { API_BASE } from '../lib/config.js';
 import TripRouteMap from './TripRouteMap.jsx';
 
+// ==========================
+// COST HELPERS
+// ==========================
+function computeDayCost(day, selectedOptions) {
+  let total = 0;
+  const items = day?.items || [];
+  for (let blockIdx = 0; blockIdx < items.length; blockIdx++) {
+    const block = items[blockIdx];
+    const selIdx = selectedOptions?.[`${day.day}-${blockIdx}`] ?? 0;
+    const opt = block?.options?.[selIdx];
+    if (opt?.cost_estimate?.amount != null) {
+      total += Number(opt.cost_estimate.amount) || 0;
+    }
+  }
+  return total;
+}
+
+function computeTripCost(plan, selectedOptions) {
+  let total = 0;
+  for (const day of plan?.daily || []) {
+    total += computeDayCost(day, selectedOptions);
+  }
+  return total;
+}
+
+// ==========================
+// BUDGET METER UI
+// ==========================
+function BudgetMeter({ tripTotal, budget, currency }) {
+  if (!budget) return null;
+
+  const pct = Math.min(100, Math.round(((tripTotal || 0) / (budget || 1)) * 100));
+  const remaining = (budget || 0) - (tripTotal || 0);
+
+  let color = 'bg-green-500';
+  if (pct > 85) color = 'bg-yellow-500';
+  if (pct > 100) color = 'bg-red-500';
+
+  return (
+    <div className="border rounded p-3 bg-gray-50 mb-4">
+      <div className="text-sm font-medium mb-1">
+        Budget usage: {pct}% ({tripTotal} / {budget} {currency})
+      </div>
+      <div className="w-full h-3 bg-gray-200 rounded">
+        <div className={`h-3 rounded ${color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+      </div>
+      <div className="text-xs text-gray-600 mt-1">
+        {remaining >= 0
+          ? `Remaining: ${remaining} ${currency}`
+          : `Over by: ${Math.abs(remaining)} ${currency}`}
+      </div>
+    </div>
+  );
+}
+
 function approxHotelFromLevel(level, currency = '') {
   const map = {
     low: '$40–$90',
@@ -191,6 +246,13 @@ export default function TripItinerary({ plan }) {
         {plan.summary && <p className="text-gray-700 mt-1">{plan.summary}</p>}
       </div>
 
+      {/* BUDGET METER */}
+      <BudgetMeter
+        tripTotal={computeTripCost(plan, selectedOptions)}
+        budget={plan.budget?.amount}
+        currency={plan.budget?.currency || plan.meta?.currency}
+      />
+
       {hasDaily && (
         <div className="space-y-4">
           {plan.daily.map((day) => {
@@ -205,6 +267,12 @@ export default function TripItinerary({ plan }) {
                     : day.date_hint
                     ? ` — ${day.date_hint}`
                     : ''}
+                </div>
+
+                {/* DAILY COST SUMMARY */}
+                <div className="text-sm font-medium text-gray-700 mb-1">
+                  Day total: {computeDayCost(day, selectedOptions)}{' '}
+                  {plan.meta?.currency || 'USD'}
                 </div>
 
                 <div className="md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:gap-4">

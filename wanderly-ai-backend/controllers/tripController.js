@@ -46,7 +46,7 @@ export async function createTripPlan(req, res) {
 
     if (!raw) {
       console.log("Groq returned empty → using mock.");
-      return res.json({ plan: buildMockPlan({ destination, days, currency, language }), mock: true });
+      return res.json({ plan: buildMockPlan({ destination, days, currency, language, budget }), mock: true });
     }
 
     // ---- Try Parse JSON ----
@@ -68,7 +68,7 @@ export async function createTripPlan(req, res) {
         } catch (e3) {
           console.warn("JSON repair failed → fallback mock");
           return res.json({
-            plan: buildMockPlan({ destination, days, currency, language }),
+            plan: buildMockPlan({ destination, days, currency, language, budget }),
             mock: true,
           });
         }
@@ -90,7 +90,7 @@ export async function createTripPlan(req, res) {
 async function generateJsonFromGroq(prompt) {
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "llama-3.1-70-versatile",
       messages: [
         { role: "system", content: "Respond ONLY with valid JSON. No markdown." },
         { role: "user", content: prompt },
@@ -112,7 +112,7 @@ async function repairJsonWithGroq(badText) {
   const instruction =
     "Fix the following content into STRICT valid JSON only. Return ONLY the JSON object, no markdown, no comments:";
   const completion = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
+    model: "llama-3.1-8b-instant",
     messages: [
       { role: "system", content: instruction },
       { role: "user", content: badText },
@@ -650,18 +650,106 @@ if (valid) {
 /* ============================================================
  * MOCK PLAN
  * ========================================================== */
-function buildMockPlan({ destination, days, currency, language }) {
-  return {
+function buildMockPlan({ destination, days, currency, language, budget }) {
+  const d = Math.max(1, Number(days) || 1);
+  const blocks = [
+    { key: "morning", time: "07:00–11:00", label: "morning" },
+    { key: "lunch", time: "11:00–14:00", label: "lunch" },
+    { key: "afternoon", time: "14:00–17:00", label: "afternoon" },
+    { key: "dinner", time: "17:00–21:00", label: "dinner" },
+    { key: "optional_evening", time: "20:00–23:30", label: "optional evening" },
+  ];
+
+  const nameSeeds = {
+    morning: ["Museum", "Botanical Garden", "Old Town Walk", "City Park"],
+    lunch: ["Famous Diner", "Local Noodle House", "Riverfront Cafe", "Seafood Shack"],
+    afternoon: ["Riverwalk", "Observation Deck", "Historic Quarter", "Art District"],
+    dinner: ["Steakhouse", "Modern Bistro", "Popular Pizzeria", "Seafood Grill"],
+    optional_evening: ["Jazz Club", "Sky Bar", "Night Market", "Rooftop Lounge"],
+  };
+
+  const mkOptions = (blockKey) => {
+    const seeds = nameSeeds[blockKey] || ["Spot A", "Spot B", "Spot C"]; 
+    return [0, 1].map((i) => {
+      const name = `${destination} ${seeds[(i) % seeds.length]}`;
+      const type =
+        blockKey === "lunch" || blockKey === "dinner" ? "restaurant" : blockKey === "optional_evening" ? "bar" : "activity";
+      const desc = `A popular ${type} in ${destination} with good reviews.`;
+      const dur = blockKey === "dinner" ? 120 : blockKey === "lunch" ? 60 : 90;
+      const dist = i === 0 ? "0.5 mi" : "1 mi";
+      const transport = i === 0 ? "Walk 8–12 min" : "Taxi 10–15 min";
+      const baseCost = type === "restaurant" ? (blockKey === "dinner" ? 45 : 25) : type === "bar" ? 15 : 20;
+      return {
+        name,
+        type,
+        description: desc,
+        duration_min: dur,
+        distance_from_previous: dist,
+        transport,
+        cost_estimate: { amount: baseCost, currency },
+        address: "", // will be resolved on demand
+      };
+    });
+  };
+
+  const daily = Array.from({ length: d }, (_v, idx) => {
+    return {
+      day: idx + 1,
+      title: `Flexible day ${idx + 1}`,
+      items: blocks.map((b) => ({ time: b.time, block_type: b.key, label: b.label, options: mkOptions(b.key) })),
+    };
+  });
+
+  const hotels = [
+    {
+      name: `${destination} Central Hotel`,
+      nightly_price: { amount: 140, currency },
+      price_level: "moderate",
+      check_in: "15:00",
+      reason: `Convenient base for ${destination}.`,
+      rating: 4.3,
+      amenities: ["Free Wi‑Fi", "On-site restaurant", "Fitness center", "24/7 front desk"],
+    },
+    {
+      name: `${destination} Budget Inn`,
+      nightly_price: { amount: 90, currency },
+      price_level: "low",
+      check_in: "15:00",
+      reason: `Affordable choice near transit in ${destination}.`,
+      rating: 3.9,
+      amenities: ["Free Wi‑Fi", "Complimentary breakfast", "Front desk"],
+    },
+    {
+      name: `${destination} Boutique View`,
+      nightly_price: { amount: 190, currency },
+      price_level: "high",
+      check_in: "15:00",
+      reason: `Stylish boutique hotel with views in ${destination}.`,
+      rating: 4.6,
+      amenities: ["Free Wi‑Fi", "Bar & lounge", "Fitness center"],
+    },
+  ];
+
+  const tips = [
+    "Use cash/card as accepted locally.",
+    "Check the weather and pack layers.",
+    "Book popular restaurants in advance.",
+  ];
+
+  const plan = {
     destination,
-    days,
-    summary: `A ${days}-day plan in ${destination} (fallback mock).`,
-    daily: [],
-    hotels: [],
-    tips: ["Use cash/card", "Check weather"],
+    days: d,
+    summary: `A ${d}-day plan in ${destination} (fallback mock).`,
+    daily,
+    hotels,
+    tips,
     meta: {
       generated_at: new Date().toISOString(),
       language,
       currency,
     },
+    budget: Number(budget) ? { amount: Number(budget), currency } : undefined,
   };
+
+  return plan;
 }
