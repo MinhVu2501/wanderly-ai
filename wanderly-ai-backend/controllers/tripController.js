@@ -90,7 +90,7 @@ export async function createTripPlan(req, res) {
 async function generateJsonFromGroq(prompt) {
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.1-70-versatile",
+      model: "llama3-8b-8192",
       messages: [
         { role: "system", content: "Respond ONLY with valid JSON. No markdown." },
         { role: "user", content: prompt },
@@ -112,7 +112,7 @@ async function repairJsonWithGroq(badText) {
   const instruction =
     "Fix the following content into STRICT valid JSON only. Return ONLY the JSON object, no markdown, no comments:";
   const completion = await groq.chat.completions.create({
-    model: "llama-3.1-8b-instant",
+    model: "llama3-8b-8192",
     messages: [
       { role: "system", content: instruction },
       { role: "user", content: badText },
