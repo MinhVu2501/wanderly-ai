@@ -88,9 +88,10 @@ export async function createTripPlan(req, res) {
  * CALL GROQ (FREE)
  * ========================================================== */
 async function generateJsonFromGroq(prompt) {
+  console.log("🔥 Using Groq model:", "llama-3.3-70b-versatile");
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama3-8b-8192",
+      model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: "Respond ONLY with valid JSON. No markdown." },
         { role: "user", content: prompt },
@@ -109,10 +110,11 @@ async function generateJsonFromGroq(prompt) {
 
 // ---- JSON repair using Groq ----
 async function repairJsonWithGroq(badText) {
+  console.log("🛠 Repairing JSON using model llama-3.3-70b-versatile");
   const instruction =
     "Fix the following content into STRICT valid JSON only. Return ONLY the JSON object, no markdown, no comments:";
   const completion = await groq.chat.completions.create({
-    model: "llama3-8b-8192",
+    model: "llama-3.3-70b-versatile",
     messages: [
       { role: "system", content: instruction },
       { role: "user", content: badText },
