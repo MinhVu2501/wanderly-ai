@@ -84,6 +84,11 @@ export async function createTripPlan(req, res) {
   }
 }
 
+// Backup alias so we always retain the original behavior
+export async function createTripPlanV1(req, res) {
+  return createTripPlan(req, res);
+}
+
 /* ============================================================
  * CALL GROQ (FREE)
  * ========================================================== */
@@ -92,6 +97,7 @@ async function generateJsonFromGroq(prompt) {
   try {
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
+      response_format: { type: "json_object" },
       messages: [
         { role: "system", content: "Respond ONLY with valid JSON. No markdown." },
         { role: "user", content: prompt },
@@ -190,6 +196,172 @@ Language: ${language}
 
 Return ONLY JSON.
   `.trim();
+}
+
+/* ============================================================
+ * TRIP V3: NEW REQUEST SHAPE
+ * ========================================================== */
+export async function createTripPlanV3(req, res) {
+  try {
+    const {
+      from = "",
+      to = "",
+      startDate = "",
+      endDate = "",
+      travelType = "comfort",
+      transportPreference = "mixed",
+      budget = "",
+      language = "en",
+    } = req.body ?? {};
+
+    if (!from || !to || !startDate || !endDate) {
+      return res.status(400).json({
+        error: "Fields 'from', 'to', 'startDate', and 'endDate' are required.",
+      });
+    }
+
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(500).json({ error: "Missing GROQ_API_KEY in .env" });
+    }
+
+    const prompt = buildTripPromptV3({
+      from,
+      to,
+      startDate,
+      endDate,
+      travelType,
+      transportPreference,
+      budget,
+      language,
+    });
+
+    console.log("\n=== SENDING TRIP V3 PROMPT TO GROQ ===\n");
+    console.log(prompt);
+
+    const raw = await generateJsonFromGroq(prompt);
+
+    let data;
+    try {
+      data = typeof raw === "string" ? JSON.parse(raw) : raw;
+    } catch (err) {
+      console.error("Failed to parse trip V3 JSON", err);
+      return res.status(500).json({ error: "AI response was not valid JSON." });
+    }
+
+    return res.json(data);
+  } catch (err) {
+    console.error("Error in createTripPlanV3:", err);
+    return res.status(500).json({ error: "Failed to generate trip plan V3." });
+  }
+}
+
+function buildTripPromptV3({
+  from,
+  to,
+  startDate,
+  endDate,
+  travelType,
+  transportPreference,
+  budget,
+  language,
+}) {
+  const budgetText = budget ? `${budget} USD` : "unknown";
+
+  return `
+You are Wanderly AI, a JSON-only travel planner.
+
+STRICT RULES:
+1. REAL places only: real attractions, restaurants, cafes, bars, museums, neighborhoods, hotels, airports.
+2. JSON-SAFE TEXT ONLY: all text fields must be single-line strings. No line breaks, no bullet lists, no unescaped quotes.
+3. DETAILED but single-line descriptions: 1–3 sentences describing what the place is known for, what visitors do, why it is special.
+4. TRANSPORT must be realistic: use walking, public transit, taxi/ride-share, or car based on user preference.
+5. REALISTIC costs and durations based on the city and travel type.
+6. OUTPUT ONLY VALID JSON. NO extra commentary.
+
+TRIP INPUT:
+- From: "${from}"
+- To: "${to}"
+- Start date: "${startDate}"
+- End date: "${endDate}"
+- Travel type: "${travelType}" (economy, comfort, premium, luxury)
+- Transport preference: "${transportPreference}" (public, taxi, car, mixed)
+- Approximate total budget: ${budgetText}
+- Language: "${language}" (but KEEP place names in Latin characters / English-friendly format)
+
+YOUR TASK:
+Plan a complete trip including:
+1) Flight info from origin to destination.
+2) Overview of travel style.
+3) Suggested hotel options matching the travel type.
+4) A detailed daily itinerary with must-visit places, food, and rest/drink stops.
+5) Cost estimates that match the travel type and transport preference.
+6) A total cost summary compared to the user's budget.
+
+FLIGHT REQUIREMENTS:
+- realistic average round-trip price in USD
+- typical duration
+- example departure airport and arrival airport (IATA codes if possible)
+- short notes about price variability.
+
+HOTEL REQUIREMENTS:
+- 3–6 hotel options that match the travel type (economy/comfort/premium/luxury):
+  - economy: budget-friendly 2–3 star typical prices
+  - comfort: 3–4 stars mid-range
+  - premium: 4–5 stars more expensive
+  - luxury: 5-star and high-end only
+- each hotel has: id, name, address, neighborhood/area, lat, lng, nightlyPrice, currency, rating, url, description (single line).
+
+ITINERARY REQUIREMENTS:
+- The itinerary covers each full day between startDate and endDate.
+- Every day must:
+  - start from a hotel area in the destination city (do not invent weird suburbs).
+  - include at least 1 famous landmark or must-see attraction.
+  - include at least 1 restaurant with a must-try dish.
+  - include at least 1 drink/rest stop (cafe, tea, dessert, bar) every 2–3 hours.
+  - include at least 1 cultural or local experience (market, neighborhood, museum, temple, viewpoint, etc).
+- For each stop you must include:
+  - name (string)
+  - type (one of: "landmark", "museum", "viewpoint", "restaurant", "cafe", "bar", "market", "neighborhood", "activity")
+  - description (single line, 1–3 sentences: what it is known for, what people do, why you recommend it)
+  - famousFor (short string, single line)
+  - whatToDo (single line)
+  - address
+  - lat (number)
+  - lng (number)
+  - startTime (string, e.g. "09:30")
+  - endTime (string, e.g. "11:00")
+  - distanceFromPrevious (string, like "0.6 miles" or "2.3 km")
+  - transport (string describing realistic method based on transportPreference)
+  - estimatedCost (number, in USD)
+  - For restaurants: mustTryDish (string)
+  - For cafes/drinks: recommendedDrink (string, can be coffee / tea / local drink).
+
+TRANSPORT PREFERENCE RULES:
+- If transportPreference = "public", use metro, train, bus. Taxi only when necessary.
+- If transportPreference = "taxi", prefer taxi/ride-share for most moves.
+- If transportPreference = "car", assume rental car + parking when realistic.
+- If transportPreference = "mixed", use a realistic combination.
+
+COST & BUDGET:
+- Provide realistic USD estimates for:
+  - flight
+  - hotels per night
+  - daily food
+  - daily activities/entrance fees
+  - daily local transport
+- Summarize totalEstimatedCost vs budget and set budgetStatus to "under", "on_track", "over", or "way_over".
+
+OUTPUT JSON SHAPE (EXAMPLE):
+{
+  "flight": { "averageCost": 1200, "currency": "USD", "duration": "11h 45m", "airports": { "departure": "SJC", "arrival": "NRT" }, "notes": "Short single-line note about pricing." },
+  "travelStyle": { "type": "${travelType}", "summary": "Short description of what this travel style means for hotels, food, and activities." },
+  "hotels": [ { "id": "hotel_1", "name": "Example Hotel", "address": "123 Main St", "area": "Shinjuku", "lat": 35.123, "lng": 139.456, "nightlyPrice": 220, "currency": "USD", "rating": 4.4, "url": "https://example.com", "description": "Single-line description." } ],
+  "days": [ { "day": 1, "date": "2025-03-10", "summary": "Short overview of the day.", "totalDayCost": 320, "transportCost": 40, "foodCost": 90, "activitiesCost": 190, "stops": [ { "name": "Senso-ji Temple", "type": "landmark", "description": "Single-line description.", "famousFor": "Oldest temple in Tokyo.", "whatToDo": "Explore temple grounds.", "address": "2 Chome-3-1 Asakusa", "lat": 35.7148, "lng": 139.7967, "startTime": "09:00", "endTime": "11:00", "distanceFromPrevious": "2.1 km", "transport": "Metro then short walk (public transit).", "estimatedCost": 0 } ] } ],
+  "costSummary": { "totalFlightCost": 1200, "totalHotelCost": 1500, "totalTransportCost": 300, "totalFoodCost": 450, "totalActivitiesCost": 700, "totalEstimatedCost": 4150, "budget": ${budget || 0}, "budgetUsedPercent": 138, "budgetStatus": "over" }
+}
+
+RETURN ONLY VALID JSON MATCHING THIS SHAPE. NO MARKDOWN, NO EXTRA TEXT.
+`;
 }
 
 /* ============================================================

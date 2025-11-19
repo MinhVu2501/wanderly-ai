@@ -34,6 +34,7 @@ app.use('/api/places', placeRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/wait-time', waitRoutes);
 app.use('/api/trip-plan', tripRoutes);
+app.use('/api/trip', tripRoutes);
 app.use('/api/resolve-place', resolveRoutes);
 
 // Start server
