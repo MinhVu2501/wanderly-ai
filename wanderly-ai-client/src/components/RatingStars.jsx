@@ -1,12 +1,20 @@
 export default function RatingStars({ value }) {
-	if (value == null) return <span className="text-gray-500">N/A</span>;
-	const clamped = Math.max(0, Math.min(5, Math.round(Number(value))));
-	return (
-		<span aria-label={`Rating ${clamped} out of 5`}>
-			{'★'.repeat(clamped)}
-			{'☆'.repeat(5 - clamped)}
-		</span>
-	);
+  const num = Number(value);
+  if (!num || Number.isNaN(num)) return null;
+
+  const rounded = Math.round(num * 2) / 2; // to .5
+  const stars = [];
+  for (let i = 1; i <= 5; i++) {
+    if (i <= rounded) stars.push('★');
+    else if (i - 0.5 === rounded) stars.push('☆');
+    else stars.push('☆');
+  }
+
+  return (
+    <span className="text-amber-500 text-sm ml-1">
+      {stars.join('')}
+    </span>
+  );
 }
 
 

@@ -6,9 +6,10 @@ import bodyParser from 'body-parser';
 import aiRoutes from './routes/aiRoutes.js';
 import placeRoutes from './routes/placeRoutes.js';
 import commentRoutes from './routes/commentRoutes.js';
-import waitRoutes from './routes/waitRoutes.js';
+import hotelRoutes from './routes/hotelRoutes.js';
 import tripRoutes from './routes/tripRoutes.js';
 import resolveRoutes from './routes/resolveRoutes.js';
+import routeOptimizeRoutes from './routes/routeOptimizeRoutes.js';
 import pool from './db.js';
 
 const app = express();
@@ -32,9 +33,16 @@ app.get('/health', async (_req, res) => {
 app.use('/api/ai', aiRoutes);
 app.use('/api/places', placeRoutes);
 app.use('/api/comments', commentRoutes);
-app.use('/api/wait-time', waitRoutes);
-app.use('/api/trip-plan', tripRoutes);
+
+// ⭐ MOUNT HOTEL ROUTES UNDER /api/trip
+app.use('/api/trip', hotelRoutes);
+
+// ⭐ MOUNT TRIP ROUTES UNDER /api/trip
 app.use('/api/trip', tripRoutes);
+
+// ⭐ Route optimization
+app.use('/api/trip', routeOptimizeRoutes);
+
 app.use('/api/resolve-place', resolveRoutes);
 
 // Start server
@@ -42,5 +50,3 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
 	console.log(`Wanderly AI backend listening on port ${PORT}`);
 });
-
-

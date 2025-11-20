@@ -3,7 +3,7 @@ import { createTripPlan, createTripPlanV3 } from '../controllers/tripController.
 
 const router = Router();
 
-router.post('/', createTripPlan);
+router.post('/plan', createTripPlan);
 router.post('/plan-v3', createTripPlanV3);
 
 export default router;
