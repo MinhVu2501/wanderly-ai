@@ -222,16 +222,25 @@ HOTEL RULES:
 
 BLOCK RULES:
 - Blocks (morning, midday, lunch, afternoon, evening, dinner, night, late_night) are already defined in skeleton.
-- For each block's "options", add 2–4 real places (ALWAYS at least 2, preferably 3-4).
+- For each block's "options", add 3–4 real places (ALWAYS generate 3-4 options, never fewer).
 - MORNING/MIDDAY/AFTERNOON/EVENING: Activities, attractions, viewpoints, parks, museums, shopping areas (NOT restaurants)
 - LUNCH/DINNER: Restaurants only
   * For LUXURY travel type: ONLY fine dining, Michelin-starred, or high-end acclaimed restaurants ($150-400+ per person)
     Examples: Alinea, Ever, Oriole, Kasama, Smyth, Indienne, Moody Tongue, Temporis, Next, Acadia
     NO casual restaurants, NO diners, NO budget options
+    Research real prices: Capella Hanoi ~$500-1000/night, fine dining restaurants in Hanoi ~$150-300/person
   * For MODERATE: Mid-range restaurants ($30-100 per person)
   * For BUDGET: Casual restaurants ($10-30 per person)
 - NIGHT/LATE_NIGHT: Nightlife activities, bars, speakeasies, night markets, live music venues (NOT dinner restaurants)
 - ALL options MUST be specific real places (name + address). NO free time, NO placeholders.
+
+RESTAURANT DEDUPLICATION RULE (CRITICAL):
+- NEVER repeat the same restaurant name across ANY day or meal time.
+- Each restaurant should appear ONLY ONCE in the entire trip itinerary.
+- If you see a restaurant in lunch of Day 1, DO NOT use it in dinner of Day 2, or lunch of Day 3, or ANY other time.
+- Generate 3-4 UNIQUE restaurants for EACH lunch/dinner block across all days.
+- Example: If "La Badiane" is in Day 1 lunch, it must NOT appear in Day 2 dinner or Day 3 lunch.
+- Track all restaurant names you've used and ensure each one is unique throughout the entire trip.
 
 OPTION FORMAT (for EVERY option):
 - name (real place, no emojis in the name)
@@ -244,7 +253,8 @@ OPTION FORMAT (for EVERY option):
 - lng (number)
 - distanceFromPrevious (string, like "0.4 mi" or "1.2 km")
 - transport (string, like "walk", "metro", "bus", "taxi/Uber")
-- estimatedCost (number, 0 only for truly free locations)
+- estimatedCost (number in USD, per person - must match real-world pricing)
+- cost_estimate (object: { amount: number, currency: "USD" }) - alternative format
 - mustTryDish (required for restaurants, else "")
 - recommendedDrink (required for cafes and bars, else "")
 - tip (one-line practical tip, no line breaks)
@@ -252,16 +262,22 @@ OPTION FORMAT (for EVERY option):
 - label ("Top Pick" | "Very Popular" | "Relaxed Option" | "Best for Photos" | "Budget Option")
 - tags (array of 1–4 short tags like ["ramen", "late night"]) 
 
-COST RULES (based on Travel Type "${travelType}"):
-- Restaurants (lunch, dinner) must have realistic prices matching the travel type:
-  * LUXURY/HIGH: Fine dining restaurants $150-400+ per person (Michelin-starred, tasting menus)
-    Examples: Alinea ($300+), Ever ($325+), Oriole, Kasama, Smyth, Indienne
-  * MODERATE: Mid-range restaurants $30-100 per person
-  * BUDGET/LOW: Casual restaurants $10-30 per person
-- Cafes, bars: realistic drink/snack prices matching travel type.
-- Museums, attractions: realistic ticket prices.
+COST RULES (based on Travel Type "${travelType}" - MUST MATCH REAL PRICES):
+- Restaurants (lunch, dinner) must have realistic prices matching the travel type AND destination:
+  * LUXURY/HIGH in major cities (Hanoi, Paris, NYC, Tokyo, etc.):
+    - Fine dining restaurants: $150-400+ per person
+    - Michelin-starred restaurants: $250-500+ per person
+    - Research actual prices: La Badiane Hanoi ~$50-100/person, not $200+
+    - Capella Hanoi hotel restaurants: ~$100-150/person
+    - Match prices to the actual destination's cost of living
+  * LUXURY/HIGH in mid-tier cities: $100-300 per person
+  * MODERATE: Mid-range restaurants $30-100 per person (adjust for destination)
+  * BUDGET/LOW: Casual restaurants $10-30 per person (adjust for destination)
+- Cafes, bars: realistic drink/snack prices matching travel type and destination.
+- Museums, attractions: realistic ticket prices for the destination.
 - Only parks/streets/walks may have estimatedCost = 0.
-- For luxury trips, dinner/lunch MUST be high-end restaurants ($150-400+ per person), NO casual options.
+- For luxury trips, dinner/lunch MUST be high-end restaurants, but prices should reflect the destination's actual cost of living.
+- ALWAYS set both estimatedCost (number) AND cost_estimate: { amount: number, currency: "USD" } for consistency.
 - For the entire trip, compute costSummary:
   - totalFlightCost
   - totalHotelCost
@@ -278,9 +294,11 @@ HOTELS ARRAY (PRESERVE FROM SKELETON):
 - DO NOT modify any hotel objects in skeleton.days[n].hotel - keep them exactly as provided.
 - The hotels structure is already correct from the skeleton - preserve it completely.
 
-DUPLICATE RULE:
+DUPLICATE RULE (STRICT):
 - Do NOT repeat the same place name in different blocks or days.
-- If you must re-use, add a suffix like "— D2 Lunch" to the name.
+- RESTAURANTS: Each restaurant name must appear ONLY ONCE across the entire trip (all days, all meal times).
+- If you must re-use a non-restaurant place, add a suffix like "— D2 Lunch" to the name, but avoid this for restaurants.
+- Generate a diverse list of 3-4 unique options for each block.
 
 SKELETON TO FILL (keep structure, fill options & costs):
 ${skeletonJson}

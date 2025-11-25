@@ -90,9 +90,9 @@ export function enforceUniquePlaces(trip) {
       });
     });
     
-    // Light cross-day deduplication: prevent same place at same section across days
-    // (e.g., "The Gage" for dinner on both Day 1 and Day 2 → remove from Day 2)
-    // But allow same place at different sections (e.g., Day 1 lunch vs Day 2 dinner)
+    // STRONG cross-day deduplication: prevent same restaurant across ALL restaurant sections (lunch/dinner)
+    // Track restaurants seen across all days to prevent repeats in any meal time
+    const RESTAURANT_SEEN = new Map(); // "restaurant-name" -> first day index and section
     const SECTION_PLACE_SEEN = new Map(); // "section-name" -> first day index
     
     trip.days.forEach((day, dayIndex) => {
@@ -102,12 +102,14 @@ export function enforceUniquePlaces(trip) {
         if (!Array.isArray(block.options)) return;
         
         const blockSection = (block.section || "").toLowerCase();
+        const isRestaurantBlock = blockSection === "lunch" || blockSection === "dinner";
         const keptOptions = [];
         const blockSeen = new Set(); // Track within this block
         
         block.options.forEach((opt) => {
           if (!opt || !opt.name) return;
           const placeName = opt.name.trim().toLowerCase();
+          const isRestaurant = opt.type === "restaurant" || isRestaurantBlock;
           
           // Skip duplicates within the same block
           if (blockSeen.has(placeName)) {
@@ -115,20 +117,33 @@ export function enforceUniquePlaces(trip) {
           }
           blockSeen.add(placeName);
           
+          // STRICT RULE: If this is a restaurant, never repeat it across ANY day
+          // Even if it's lunch on day 2 and dinner on day 3, we should have different restaurants
+          if (isRestaurant && RESTAURANT_SEEN.has(placeName)) {
+            const seenInfo = RESTAURANT_SEEN.get(placeName);
+            // Only skip if we have 2+ options already
+            if (keptOptions.length >= 2) {
+              return; // Skip this duplicate restaurant
+            }
+            // If we have less than 2, we'll keep it but log a warning
+            console.warn(`⚠️ Restaurant "${opt.name}" repeated across days but kept for minimum options`);
+          }
+          
+          // Track restaurant for cross-day deduplication
+          if (isRestaurant && !RESTAURANT_SEEN.has(placeName)) {
+            RESTAURANT_SEEN.set(placeName, { dayIndex, section: blockSection });
+          }
+          
           const sectionKey = `${blockSection}-${placeName}`;
           
           // If we've seen this place at this same section/time on a different day, skip it
-          // BUT: keep it if this block would have less than 2 options after removal
           if (SECTION_PLACE_SEEN.has(sectionKey)) {
             const firstDayIndex = SECTION_PLACE_SEEN.get(sectionKey);
             if (firstDayIndex !== dayIndex) {
-              // Count how many options we would have if we skip this one
-              const wouldHaveCount = keptOptions.length;
-              // Only skip if we already have 2+ options, otherwise keep duplicates
-              if (wouldHaveCount >= 2) {
+              // Only skip if we already have 2+ options
+              if (keptOptions.length >= 2) {
                 return; // Skip - duplicate at same time across days
               }
-              // Otherwise keep it to ensure minimum 2 options
             }
           }
           

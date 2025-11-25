@@ -317,14 +317,22 @@ export default function TripItinerary({ plan }) {
                                 opt.name ||
                                 opt.title ||
                                 `Option ${optIdx + 1}`;
-                              const cost =
-                                opt.cost_estimate?.amount != null
-                                  ? `${opt.cost_estimate.amount} ${
-                                      opt.cost_estimate.currency ||
-                                      plan?.meta?.currency ||
-                                      ''
-                                    }`
+                              // Check multiple cost fields
+                              const costAmount = opt.cost_estimate?.amount != null 
+                                ? opt.cost_estimate.amount 
+                                : opt.estimatedCost != null
+                                  ? opt.estimatedCost
                                   : null;
+                              
+                              const cost = costAmount != null
+                                ? `$${costAmount}${
+                                    opt.cost_estimate?.currency 
+                                      ? ` ${opt.cost_estimate.currency}`
+                                      : plan?.meta?.currency 
+                                        ? ` ${plan.meta.currency}`
+                                        : ''
+                                  }`
+                                : null;
 
                               const key = `${day.day}-${blockIdx}-${optIdx}`;
                               const r = resolved[key];
@@ -414,8 +422,13 @@ export default function TripItinerary({ plan }) {
                                   </div>
 
                                   {cost && (
-                                    <div className="text-xs text-gray-700 mt-1">
-                                      Avg cost: {cost}
+                                    <div className="text-xs font-semibold text-gray-900 mt-2">
+                                      💰 Cost: {cost}
+                                    </div>
+                                  )}
+                                  {!cost && (opt.estimatedCost || opt.cost_estimate?.amount) && (
+                                    <div className="text-xs font-semibold text-gray-900 mt-2">
+                                      💰 Cost: ${opt.estimatedCost || opt.cost_estimate?.amount || 0}
                                     </div>
                                   )}
 

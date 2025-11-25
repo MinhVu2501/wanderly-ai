@@ -86,7 +86,12 @@ export default function TripPlanner() {
       const normalize = (raw) => {
         const v = raw?.plan || raw?.trip || raw || {};
         if (Array.isArray(v.days)) {
-          v.days = v.days.map((day) => {
+          // Ensure hotels are attached to days from hotelPerDayData
+          v.days = v.days.map((day, i) => {
+            // Attach hotel from hotelPerDayData if not already present
+            if (!day.hotel && hotelPerDayData && hotelPerDayData[i]) {
+              day.hotel = hotelPerDayData[i];
+            }
             if ((!Array.isArray(day.blocks) || day.blocks.length === 0) && Array.isArray(day.stops)) {
               day.blocks = day.stops.map((s) => ({
                 time: s.time || '',
@@ -110,6 +115,10 @@ export default function TripPlanner() {
             }
             return day;
           });
+          // Ensure hotels array exists
+          if (!v.hotels && hotelsData) {
+            v.hotels = hotelsData;
+          }
           return v;
         }
         if (Array.isArray(v.daily)) {
@@ -152,8 +161,44 @@ export default function TripPlanner() {
           };
         }
 
+        // Cost parser with robust fallbacks
+        const parseCost = (v) => {
+          if (v == null) return 0;
+          if (typeof v === 'number') return v;
+          if (typeof v === 'string') {
+            const m = v.match(/(\d+(?:\.\d+)?)/);
+            return m ? Number(m[1]) : 0;
+          }
+          if (typeof v === 'object') {
+            if (v.amount != null) return Number(v.amount) || 0;
+          }
+          return 0;
+        };
+
+        const cheapestFromOptions = (opts) => {
+          const costs = (opts || [])
+            .map((o) =>
+              parseCost(
+                o.estimatedCost ?? o.cost ?? o.price ?? o.cost_estimate?.amount ?? o.avgCost
+              )
+            )
+            .filter((n) => Number.isFinite(n));
+          return costs.length ? Math.min(...costs) : 0;
+        };
+
+        // Calculate hotel cost from hotelPerDayData
+        let hotelSum = 0;
+        (hotelPerDayData || []).forEach((d) => {
+          let price = 0;
+          if (d && d.nightlyPrice != null) {
+            price = typeof d.nightlyPrice === 'object' 
+              ? Number(d.nightlyPrice.amount ?? 0) 
+              : Number(d.nightlyPrice);
+          }
+          if (!Number.isNaN(price)) hotelSum += price;
+        });
+
         let flightCost = 0;
-        let hotelCost = 0;
         let transportCost = 0;
         let foodCost = 0;
         let activityCost = 0;
@@ -162,41 +207,35 @@ export default function TripPlanner() {
           flightCost = next.flight.averageCost;
         }
 
+        // Calculate food and activity costs from blocks
         daysArr.forEach((day) => {
-          if (day.hotel && day.hotel.nightlyPrice) {
-            hotelCost += typeof day.hotel.nightlyPrice === 'number' ? day.hotel.nightlyPrice : 0;
-          }
           if (Array.isArray(day.blocks)) {
             day.blocks.forEach((block) => {
-              if (Array.isArray(block.options)) {
-                block.options.forEach((opt) => {
-                  const cost = opt.estimatedCost ?? opt.cost ?? opt.price ?? opt.cost_estimate?.amount ?? 0;
-                  const numCost = typeof cost === 'number' ? cost : parseFloat(cost) || 0;
-                  const section = (block.section || '').toLowerCase();
-                  if (section.includes('lunch') || section.includes('dinner')) {
-                    foodCost += numCost;
-                  } else if (section.includes('transport') || section.includes('travel')) {
-                    transportCost += numCost;
-                  } else {
-                    activityCost += numCost;
-                  }
-                });
+              const section = (block.section || '').toLowerCase();
+              const cheapest = cheapestFromOptions(block.options || []);
+              
+              if (section === 'lunch' || section === 'dinner') {
+                foodCost += cheapest;
+              } else if (section !== 'lunch' && section !== 'dinner') {
+                // All other blocks are activities
+                activityCost += cheapest;
               }
             });
           }
         });
 
-        const totalEstimated = flightCost + hotelCost + transportCost + foodCost + activityCost;
+        const totalEstimated = flightCost + hotelSum + transportCost + foodCost + activityCost;
         const budgetNum = parseFloat(formVals.budget || '0') || 0;
         const pct = budgetNum > 0 ? (totalEstimated / budgetNum) * 100 : 0;
-        const status = pct > 100 ? 'over' : pct > 90 ? 'warning' : 'ok';
+        const status = pct > 100 ? 'way_over' : pct > 85 ? 'over' : pct <= 85 ? 'on_track' : 'under';
 
+        // Use same field names as BudgetMeter expects
         next.costSummary = {
-          flight: flightCost,
-          hotels: hotelCost,
-          transport: transportCost,
-          food: foodCost,
-          activities: activityCost,
+          totalFlightCost: flightCost,
+          totalHotelCost: hotelSum,
+          totalTransportCost: transportCost,
+          totalFoodCost: foodCost,
+          totalActivitiesCost: activityCost,
           totalEstimatedCost: totalEstimated,
           budget: budgetNum,
           budgetUsedPercent: pct,
@@ -521,11 +560,16 @@ export default function TripPlanner() {
 
         // Build/patch costSummary
         const cs = next.costSummary || {};
+        
+        // Food cost: sum lunch and dinner blocks only
         const totalFood =
           cs.totalFoodCost ??
           daysArr.reduce((acc, d) => {
             const foodBlocks = (d.blocks || []).filter(
-              (b) => (b.section || '').toString().toLowerCase() === 'midday' || (b.section || '').toString().toLowerCase() === 'evening'
+              (b) => {
+                const section = (b.section || '').toString().toLowerCase();
+                return section === 'lunch' || section === 'dinner';
+              }
             );
             let sum = 0;
             foodBlocks.forEach((b) => {
@@ -534,23 +578,42 @@ export default function TripPlanner() {
             });
             return acc + sum;
           }, 0);
+        
+        // Activities cost: sum all non-food blocks (morning, midday, afternoon, evening, night, late_night)
         const totalActivities =
-          cs.totalActivitiesCost ?? daysArr.reduce((acc, d) => acc + (Number(d.totalDayCost || 0) || 0), 0);
+          cs.totalActivitiesCost ??
+          daysArr.reduce((acc, d) => {
+            const activityBlocks = (d.blocks || []).filter(
+              (b) => {
+                const section = (b.section || '').toString().toLowerCase();
+                return section !== 'lunch' && section !== 'dinner';
+              }
+            );
+            let sum = 0;
+            activityBlocks.forEach((b) => {
+              const cheapest = cheapestFromOptions(b.options || []);
+              if (Number.isFinite(cheapest)) sum += cheapest;
+            });
+            return acc + sum;
+          }, 0);
+        
+        // Transport cost: sum transport-specific costs (usually from transport field or activity transport costs)
         const totalTransport =
           cs.totalTransportCost ??
           daysArr.reduce((acc, d) => {
             let sum = 0;
             (d.blocks || []).forEach((b) => {
               (b.options || []).forEach((o) => {
-                const hasTransport = !!o.transport;
-                const val = parseCost(
-                  o.estimatedCost ?? o.cost ?? o.price ?? o.cost_estimate?.amount ?? o.avgCost
+                // Transport costs are usually minimal or included, but check if there's a specific transport cost field
+                const transportCost = parseCost(
+                  o.transportCost ?? o.transport_cost ?? 0
                 );
-                if (hasTransport && val > 0) sum += val;
+                if (transportCost > 0) sum += transportCost;
               });
             });
             return acc + sum;
           }, 0);
+        
         const totalFlight = cs.totalFlightCost ?? Number(next.flight?.averageCost || 0);
         const totalHotel = hotelSum || cs.totalHotelCost || 0;
         const totalEstimated = cs.totalEstimatedCost ?? (totalFlight + totalHotel + totalTransport + totalActivities + (Number(totalFood) || 0));

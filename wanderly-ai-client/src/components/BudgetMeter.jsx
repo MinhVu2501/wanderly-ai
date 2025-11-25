@@ -58,17 +58,17 @@ export default function BudgetMeter({ costSummary }) {
       </div>
 
       <p className="text-sm text-slate-700 mb-3">
-        Used: ${totalEstimatedCost} / ${budget}
+        Used: ${totalEstimatedCost || 0} / ${budget || 0}
         <br />
         ({Math.round(percent)}% - {(budgetStatus || '').replace('_', ' ')})
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-sm text-slate-800">
-        <div className="bg-gray-50 rounded-md px-3 py-2">✈️ Flight: ${totalFlightCost}</div>
-        <div className="bg-gray-50 rounded-md px-3 py-2">🏨 Hotels: ${totalHotelCost}</div>
-        <div className="bg-gray-50 rounded-md px-3 py-2">🍽 Food: ${totalFoodCost}</div>
-        <div className="bg-gray-50 rounded-md px-3 py-2">🚕 Transport: ${totalTransportCost}</div>
-        <div className="bg-gray-50 rounded-md px-3 py-2">🎟 Activities: ${totalActivitiesCost}</div>
+        <div className="bg-gray-50 rounded-md px-3 py-2">✈️ Flight: ${Number(totalFlightCost || 0).toLocaleString()}</div>
+        <div className="bg-gray-50 rounded-md px-3 py-2">🏨 Hotels: ${Number(totalHotelCost || 0).toLocaleString()}</div>
+        <div className="bg-gray-50 rounded-md px-3 py-2">🍽 Food: ${Number(totalFoodCost || 0).toLocaleString()}</div>
+        <div className="bg-gray-50 rounded-md px-3 py-2">🚕 Transport: ${Number(totalTransportCost || 0).toLocaleString()}</div>
+        <div className="bg-gray-50 rounded-md px-3 py-2">🎟 Activities: ${Number(totalActivitiesCost || 0).toLocaleString()}</div>
       </div>
     </div>
   );

@@ -15,8 +15,8 @@ export async function llamaMicroFill(
     .map((o) => o?.name?.toLowerCase().trim())
     .filter(Boolean);
 
-  // We usually want 2–4 options total; ask for 3 new ones at a time
-  const needed = Math.max(2, 3 - existingOptions.length);
+  // We want 3-4 options total; ask for enough to reach that
+  const needed = Math.max(3, 4 - existingOptions.length);
 
   // Determine type based on block type
   const blockTypeLower = String(blockType || "").toLowerCase();
@@ -69,8 +69,11 @@ ${priceGuidance}
 Rules:
 - NO placeholders, NO "Suggested Activity", NO fake names.
 - Do NOT repeat any of these names: ${existingNames.join(", ") || "none"}.
+- RESTAURANTS: Never repeat the same restaurant name. Each restaurant must be unique across the entire trip.
 - Only real ${typeGuidance}.
-${isLuxury && (isDinner || isLunch) ? "- For luxury trips, ONLY suggest Michelin-starred, fine dining, or high-end acclaimed restaurants (examples: Alinea, Ever, Oriole, Kasama, Smyth). NO casual restaurants." : ""}
+- Generate ${needed} unique options (must be ${needed}, not fewer).
+${isLuxury && (isDinner || isLunch) ? "- For luxury trips, ONLY suggest Michelin-starred, fine dining, or high-end acclaimed restaurants. Research real prices: fine dining in ${destination} typically costs $150-400/person. Match prices to the actual destination's cost of living. NO casual restaurants." : ""}
+${isDinner || isLunch ? "- Restaurant prices must match real-world costs. Research actual restaurant prices in ${destination} for the travel type specified. Include both 'estimatedCost' (number) and 'cost_estimate' (object with amount and currency) fields." : ""}
 
 Return STRICT JSON only, exactly in this shape:
 
@@ -86,6 +89,7 @@ Return STRICT JSON only, exactly in this shape:
       "distanceFromPrevious": "0.4 mi",
       "transport": "walk",
       "estimatedCost": 15,
+      "cost_estimate": { "amount": 15, "currency": "USD" },
       "famousFor": "string",
       "whatToDo": "string",
       "mustTryDish": "string",
@@ -122,6 +126,7 @@ Return ONLY JSON, no explanation.
 
     const lowerExisting = new Set(existingNames);
 
+    // Normalize and filter options
     return options.filter((opt) => {
       if (!opt || typeof opt !== "object") return false;
       const name = String(opt.name || "").trim();
@@ -138,6 +143,14 @@ Return ONLY JSON, no explanation.
           key.includes("placeholder") ||
           key === "free time" ||
           key === "explore nearby") return false;
+
+      // Normalize cost fields - ensure both estimatedCost and cost_estimate exist
+      const costAmount = opt.estimatedCost ?? opt.cost_estimate?.amount ?? 0;
+      opt.estimatedCost = typeof costAmount === 'number' ? costAmount : parseFloat(costAmount) || 0;
+      opt.cost_estimate = {
+        amount: opt.estimatedCost,
+        currency: opt.cost_estimate?.currency || "USD"
+      };
 
       return true;
     });
