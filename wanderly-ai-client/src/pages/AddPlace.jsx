@@ -35,21 +35,33 @@ export default function AddPlace() {
 	};
 
 	return (
-		<div className="max-w-md mx-auto p-6">
-			<h2 className="text-xl font-bold mb-4">{t('add_place')}</h2>
-			<form onSubmit={handleSubmit} className="flex flex-col gap-3">
-				<input name="name_en" placeholder="Name (English)" onChange={handleChange} className="border rounded p-2" />
-				<input name="name_vi" placeholder="Tên (Tiếng Việt)" onChange={handleChange} className="border rounded p-2" />
-				<input name="category" placeholder="Category" onChange={handleChange} className="border rounded p-2" />
-				<textarea name="description_en" placeholder="Description (English)" onChange={handleChange} className="border rounded p-2" />
-				<textarea name="description_vi" placeholder="Mô tả (Tiếng Việt)" onChange={handleChange} className="border rounded p-2" />
-				<input name="latitude" placeholder="Latitude" onChange={handleChange} className="border rounded p-2" />
-				<input name="longitude" placeholder="Longitude" onChange={handleChange} className="border rounded p-2" />
-				<input name="created_by" placeholder="Your name" onChange={handleChange} className="border rounded p-2" />
-				<button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">
-					{t('submit')}
-				</button>
-			</form>
+		<div className="min-h-screen" style={{ backgroundColor: '#FAF7F2' }}>
+			<div className="max-w-md mx-auto p-6">
+				<h2 className="text-xl font-bold mb-4" style={{ color: '#1E1E1E' }}>{t('add_place')}</h2>
+				<form onSubmit={handleSubmit} className="flex flex-col gap-3">
+					<input name="name_en" placeholder="Name (English)" onChange={handleChange} className="border rounded p-2 bg-white" />
+					<input name="name_vi" placeholder="Tên (Tiếng Việt)" onChange={handleChange} className="border rounded p-2 bg-white" />
+					<input name="category" placeholder="Category" onChange={handleChange} className="border rounded p-2 bg-white" />
+					<textarea name="description_en" placeholder="Description (English)" onChange={handleChange} className="border rounded p-2 bg-white" />
+					<textarea name="description_vi" placeholder="Mô tả (Tiếng Việt)" onChange={handleChange} className="border rounded p-2 bg-white" />
+					<input name="latitude" placeholder="Latitude" onChange={handleChange} className="border rounded p-2 bg-white" />
+					<input name="longitude" placeholder="Longitude" onChange={handleChange} className="border rounded p-2 bg-white" />
+					<input name="created_by" placeholder="Your name" onChange={handleChange} className="border rounded p-2 bg-white" />
+					<button 
+						type="submit" 
+						className="text-white px-4 py-2 rounded font-semibold transition-colors duration-200"
+						style={{ backgroundColor: '#EFBF3D' }}
+						onMouseEnter={(e) => {
+							e.currentTarget.style.backgroundColor = '#D9AD31';
+						}}
+						onMouseLeave={(e) => {
+							e.currentTarget.style.backgroundColor = '#EFBF3D';
+						}}
+					>
+						{t('submit')}
+					</button>
+				</form>
+			</div>
 		</div>
 	);
 }

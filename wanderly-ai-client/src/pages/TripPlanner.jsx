@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import TripItinerary from '../components/TripItinerary.jsx';
 import { API_BASE } from '../lib/config.js';
@@ -9,6 +10,8 @@ import TripMap from '../components/TripMap.jsx';
 
 export default function TripPlanner() {
   const { i18n } = useTranslation();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // ==========================
   // V3 FORM STATE
@@ -41,11 +44,175 @@ export default function TripPlanner() {
   // Selected option per block (single-select per block)
   const [selectedOptions, setSelectedOptions] = useState({});
 
+  // Initialize from HotelSelection page if data is passed
+  useEffect(() => {
+    if (location.state) {
+      const { formValues: passedFormValues, hotels: passedHotels, hotelPerDay: passedHotelPerDay } = location.state;
+      if (passedFormValues && passedHotels && passedHotelPerDay) {
+        setFormValues(passedFormValues);
+        setHotels(passedHotels);
+        setHotelPerDay(passedHotelPerDay);
+        setStep('itinerary'); // Skip form and hotel selection, go straight to generating itinerary
+        // Auto-generate trip
+        generateTripFromState(passedFormValues, passedHotels, passedHotelPerDay);
+      }
+    }
+  }, []);
+
   // Keep form language synced to i18n
   useEffect(() => {
     const lang = i18n.language === 'vi' ? 'vi' : 'en';
     setFormValues((f) => (f.language === lang ? f : { ...f, language: lang }));
   }, [i18n.language]);
+
+  // Function to generate trip from passed state
+  async function generateTripFromState(formVals, hotelsData, hotelPerDayData) {
+    setLoading(true);
+    setError('');
+    setTrip(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/trip/plan-v3`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formVals,
+          hotelPerDay: hotelPerDayData,
+        }),
+      });
+      const data = await res.json();
+      try { console.log('RAW V3 RESPONSE:', data); } catch {}
+      if (!res.ok) throw new Error(data?.error || 'Failed to generate trip.');
+
+      const normalize = (raw) => {
+        const v = raw?.plan || raw?.trip || raw || {};
+        if (Array.isArray(v.days)) {
+          v.days = v.days.map((day) => {
+            if ((!Array.isArray(day.blocks) || day.blocks.length === 0) && Array.isArray(day.stops)) {
+              day.blocks = day.stops.map((s) => ({
+                time: s.time || '',
+                section: (s.category || s.type || 'visit').toString().toLowerCase(),
+                options: [
+                  {
+                    name: s.name || '',
+                    lat: s.lat,
+                    lng: s.lng,
+                    category: s.category || '',
+                    description: s.description || '',
+                    estimatedCost: s.estimatedCost ?? s?.cost_estimate?.amount ?? 0,
+                    transport: s.transport || '',
+                    address: s.address,
+                    rating: s.rating,
+                    label: s.label,
+                    tags: s.tags,
+                  },
+                ],
+              }));
+            }
+            return day;
+          });
+          return v;
+        }
+        if (Array.isArray(v.daily)) {
+          const days = v.daily.map((d, i) => ({
+            day: d.day || i + 1,
+            date: d.date || d.date_hint || '',
+            hotel: hotelPerDayData[i] || null,
+            blocks: (d.items || []).map((it) => ({
+              time: it.time || '',
+              section: (it.section || it.block_type || it.label || '').toString().toLowerCase(),
+              options: it.options || [],
+            })),
+          }));
+          return {
+            flight: v.flight || null,
+            travelStyle: v.travelStyle || null,
+            hotels: hotelsData || [],
+            days,
+            costSummary: v.costSummary || null,
+          };
+        }
+        return v;
+      };
+
+      const normalized = normalize(data);
+      try { console.log('NORMALIZED DAYS COUNT:', normalized?.days?.length); } catch {}
+      
+      const computeTotals = (t) => {
+        const next = JSON.parse(JSON.stringify(t || {}));
+        const daysArr = Array.isArray(next.days) ? next.days : [];
+
+        if (next.flight) {
+          const f = next.flight;
+          const avg = f.averageCost || f.cost || 0;
+          next.flight = {
+            ...f,
+            averageCost: typeof avg === 'number' ? avg : 0,
+            duration: f.duration || '',
+            airports: f.airports || {},
+          };
+        }
+
+        let flightCost = 0;
+        let hotelCost = 0;
+        let transportCost = 0;
+        let foodCost = 0;
+        let activityCost = 0;
+
+        if (next.flight && typeof next.flight.averageCost === 'number') {
+          flightCost = next.flight.averageCost;
+        }
+
+        daysArr.forEach((day) => {
+          if (day.hotel && day.hotel.nightlyPrice) {
+            hotelCost += typeof day.hotel.nightlyPrice === 'number' ? day.hotel.nightlyPrice : 0;
+          }
+          if (Array.isArray(day.blocks)) {
+            day.blocks.forEach((block) => {
+              if (Array.isArray(block.options)) {
+                block.options.forEach((opt) => {
+                  const cost = opt.estimatedCost ?? opt.cost ?? opt.price ?? opt.cost_estimate?.amount ?? 0;
+                  const numCost = typeof cost === 'number' ? cost : parseFloat(cost) || 0;
+                  const section = (block.section || '').toLowerCase();
+                  if (section.includes('lunch') || section.includes('dinner')) {
+                    foodCost += numCost;
+                  } else if (section.includes('transport') || section.includes('travel')) {
+                    transportCost += numCost;
+                  } else {
+                    activityCost += numCost;
+                  }
+                });
+              }
+            });
+          }
+        });
+
+        const totalEstimated = flightCost + hotelCost + transportCost + foodCost + activityCost;
+        const budgetNum = parseFloat(formVals.budget || '0') || 0;
+        const pct = budgetNum > 0 ? (totalEstimated / budgetNum) * 100 : 0;
+        const status = pct > 100 ? 'over' : pct > 90 ? 'warning' : 'ok';
+
+        next.costSummary = {
+          flight: flightCost,
+          hotels: hotelCost,
+          transport: transportCost,
+          food: foodCost,
+          activities: activityCost,
+          totalEstimatedCost: totalEstimated,
+          budget: budgetNum,
+          budgetUsedPercent: pct,
+          budgetStatus: status,
+        };
+        next.days = daysArr;
+        return next;
+      };
+
+      setTrip(computeTotals(normalized));
+    } catch (err) {
+      setError(err.message || 'Failed to generate trip.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   // Helper utils
   function getDaysBetween(start, end) {
@@ -495,8 +662,9 @@ export default function TripPlanner() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Trip Planner</h1>
+    <div className="min-h-screen" style={{ backgroundColor: '#FAF7F2' }}>
+      <div className="p-6 max-w-4xl mx-auto">
+        <h1 className="text-2xl font-bold mb-4" style={{ color: '#1E1E1E' }}>Trip Planner</h1>
 
       {/* STEP: FORM */}
       {step === 'form' && (
@@ -521,7 +689,7 @@ export default function TripPlanner() {
           />
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-sm font-medium text-slate-700">Start Date</label>
+              <label className="block text-sm font-medium" style={{ color: '#1E1E1E' }}>Start Date</label>
               <input
                 type="date"
                 value={formValues.startDate}
@@ -532,7 +700,7 @@ export default function TripPlanner() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">End Date</label>
+              <label className="block text-sm font-medium" style={{ color: '#1E1E1E' }}>End Date</label>
               <input
                 type="date"
                 value={formValues.endDate}
@@ -546,7 +714,7 @@ export default function TripPlanner() {
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-sm font-medium text-slate-700">Travel Type</label>
+              <label className="block text-sm font-medium" style={{ color: '#1E1E1E' }}>Travel Type</label>
               <select
                 value={formValues.travelType}
                 onChange={(e) => setFormValues({ ...formValues, travelType: e.target.value })}
@@ -570,7 +738,21 @@ export default function TripPlanner() {
             disabled={loading}
           />
 
-          <button type="submit" disabled={loading} className="bg-blue-500 text-white px-4 py-2 rounded">
+          <button 
+            type="submit" 
+            disabled={loading} 
+            className="text-white px-4 py-2 rounded transition-colors duration-200 font-semibold"
+            style={{
+              backgroundColor: loading ? '#D1D5DB' : '#EFBF3D',
+              cursor: loading ? 'not-allowed' : 'pointer',
+            }}
+            onMouseEnter={(e) => {
+              if (!loading) e.currentTarget.style.backgroundColor = '#D9AD31';
+            }}
+            onMouseLeave={(e) => {
+              if (!loading) e.currentTarget.style.backgroundColor = '#EFBF3D';
+            }}
+          >
             {loading ? 'Loading hotels...' : 'Find Hotels'}
           </button>
 
@@ -583,7 +765,7 @@ export default function TripPlanner() {
       {/* STEP: HOTELS SELECTION */}
       {step === 'hotels' && (
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Select Your Hotel For Each Day</h2>
+          <h2 className="text-xl font-semibold" style={{ color: '#1E1E1E' }}>Select Your Hotel For Each Day</h2>
 
           <div className="grid md:grid-cols-2 gap-3">
             {hotels.map((h, hi) => (
@@ -601,7 +783,7 @@ export default function TripPlanner() {
             ))}
           </div>
 
-          <h3 className="text-lg font-semibold">Assign Hotel per Day</h3>
+          <h3 className="text-lg font-semibold" style={{ color: '#1E1E1E' }}>Assign Hotel per Day</h3>
           <div className="overflow-auto">
             <table className="min-w-full text-sm">
               <thead>
@@ -640,9 +822,17 @@ export default function TripPlanner() {
             <button
               onClick={generateTrip}
               disabled={loading}
-              className={`px-4 py-2 rounded text-white inline-flex items-center gap-2 ${
-                loading ? 'bg-blue-400 cursor-not-allowed opacity-80' : 'bg-blue-600 hover:bg-blue-700'
-              }`}
+              className="px-4 py-2 rounded text-white inline-flex items-center gap-2 font-semibold transition-colors duration-200"
+              style={{
+                backgroundColor: loading ? '#D1D5DB' : '#EFBF3D',
+                cursor: loading ? 'not-allowed' : 'pointer',
+              }}
+              onMouseEnter={(e) => {
+                if (!loading) e.currentTarget.style.backgroundColor = '#D9AD31';
+              }}
+              onMouseLeave={(e) => {
+                if (!loading) e.currentTarget.style.backgroundColor = '#EFBF3D';
+              }}
             >
               {loading ? (
                 <>
@@ -665,16 +855,45 @@ export default function TripPlanner() {
         </div>
       )}
 
+      {/* STEP: ITINERARY - Loading State */}
+      {step === 'itinerary' && loading && !trip && (
+        <div className="flex flex-col items-center justify-center py-20">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 mb-4" style={{ borderColor: '#EFBF3D' }}></div>
+          <p className="text-xl font-semibold" style={{ color: '#1E1E1E' }}>Generating your trip itinerary...</p>
+          <p className="text-sm mt-2" style={{ color: '#1E1E1E', opacity: 0.7 }}>This may take a few moments</p>
+        </div>
+      )}
+
       {/* STEP: ITINERARY (placeholder until Step 4) */}
       {step === 'itinerary' && trip && (
         <div className="space-y-4">
+          {/* Back Button */}
+          <button
+            onClick={() => {
+              // If came from HotelSelection, go back to hotels page
+              if (location.state) {
+                navigate('/hotels');
+              } else {
+                // Otherwise reset to form step
+                setStep('form');
+                setTrip(null);
+              }
+            }}
+            className="mb-4 px-4 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors flex items-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
+          </button>
+
           {trip.costSummary && (
             <>
               <BudgetWarning budgetStatus={trip.costSummary.budgetStatus} />
               <BudgetMeter costSummary={trip.costSummary} />
             </>
           )}
-          <h2 className="text-xl font-semibold">✈️ Flight</h2>
+          <h2 className="text-xl font-semibold" style={{ color: '#1E1E1E' }}>✈️ Flight</h2>
           {trip.flight && (
             <div className="text-sm">
               <div>Cost: ${trip.flight.averageCost}</div>
@@ -687,7 +906,7 @@ export default function TripPlanner() {
             </div>
           )}
 
-          <h2 className="text-xl font-semibold">🏨 Your Hotels</h2>
+          <h2 className="text-xl font-semibold" style={{ color: '#1E1E1E' }}>🏨 Your Hotels</h2>
           <div className="grid md:grid-cols-2 gap-3">
             {(trip.hotels || []).map((h, hi) => (
               <div key={h.id || `${h.name || 'hotel'}-${hi}`} className="border rounded p-3 bg-white">
@@ -699,7 +918,7 @@ export default function TripPlanner() {
             ))}
           </div>
 
-          <h2 className="text-xl font-semibold">🗓 Daily Itinerary</h2>
+          <h2 className="text-xl font-semibold" style={{ color: '#1E1E1E' }}>🗓 Daily Itinerary</h2>
           <div className="space-y-3">
             {trip?.days?.map((d, idx) => {
               const blocks = Array.isArray(d.blocks) ? d.blocks : [];
@@ -794,6 +1013,7 @@ export default function TripPlanner() {
           <TripItinerary plan={plan} />
         </>
       )}
+      </div>
     </div>
   );
 }
