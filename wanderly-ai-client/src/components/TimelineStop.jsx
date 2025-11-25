@@ -13,6 +13,11 @@ export default function TimelineStop({ stop }) {
     distanceFromPrevious,
     transport,
     estimatedCost,
+    famousFor,
+    whatToDo,
+    mustTryDish,
+    recommendedDrink,
+    tip,
   } = stop || {};
 
   const cost =
@@ -84,9 +89,39 @@ export default function TimelineStop({ stop }) {
         </p>
       )}
 
+      {famousFor && (
+        <div className="text-xs text-slate-700 mt-1">
+          ⭐ <span className="font-medium">Famous for:</span> {famousFor}
+        </div>
+      )}
+
+      {whatToDo && (
+        <div className="text-xs text-slate-700 mt-1">
+          ✔️ <span className="font-medium">What to do:</span> {whatToDo}
+        </div>
+      )}
+
+      {mustTryDish && (
+        <div className="text-xs text-slate-700 mt-1">
+          🍽 <span className="font-medium">Must-try:</span> {mustTryDish}
+        </div>
+      )}
+
+      {recommendedDrink && (
+        <div className="text-xs text-slate-700 mt-1">
+          🥤 <span className="font-medium">Drink:</span> {recommendedDrink}
+        </div>
+      )}
+
       {address && (
         <div className="text-xs text-slate-500">
           {address}
+        </div>
+      )}
+
+      {tip && (
+        <div className="text-xs text-yellow-700 mt-1">
+          💡 <span className="font-medium">Tip:</span> {tip}
         </div>
       )}
 

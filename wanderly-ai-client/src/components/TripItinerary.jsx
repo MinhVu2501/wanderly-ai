@@ -353,9 +353,40 @@ export default function TripItinerary({ plan }) {
                                       {opt.description}
                                     </div>
                                   )}
+
+                                  {opt.famousFor && (
+                                    <div className="text-xs text-gray-700 mt-1">
+                                      ⭐ <span className="font-medium">Famous for:</span> {opt.famousFor}
+                                    </div>
+                                  )}
+
+                                  {opt.whatToDo && (
+                                    <div className="text-xs text-gray-700 mt-1">
+                                      ✔️ <span className="font-medium">What to do:</span> {opt.whatToDo}
+                                    </div>
+                                  )}
+
+                                  {opt.mustTryDish && (
+                                    <div className="text-xs text-gray-700 mt-1">
+                                      🍽 <span className="font-medium">Must-try:</span> {opt.mustTryDish}
+                                    </div>
+                                  )}
+
+                                  {opt.recommendedDrink && (
+                                    <div className="text-xs text-gray-700 mt-1">
+                                      🥤 <span className="font-medium">Drink:</span> {opt.recommendedDrink}
+                                    </div>
+                                  )}
+
                                   {(r?.data?.address || opt.address) && (
                                     <div className="text-xs text-gray-600 mt-1">
                                       {opt.address || r?.data?.address}
+                                    </div>
+                                  )}
+
+                                  {opt.tip && (
+                                    <div className="text-xs text-yellow-700 mt-1">
+                                      💡 <span className="font-medium">Tip:</span> {opt.tip}
                                     </div>
                                   )}
 

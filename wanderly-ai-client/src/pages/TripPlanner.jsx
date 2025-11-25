@@ -207,24 +207,8 @@ export default function TripPlanner() {
               }));
             }
             // Ensure every block has at least one option
-            if (Array.isArray(day.blocks)) {
-              day.blocks = day.blocks.map((block) => {
-                if (!Array.isArray(block.options) || block.options.length === 0) {
-                  block.options = [
-                    {
-                      name: block.title || block.label || 'Suggested Activity',
-                      lat: day.hotel?.lat || 0,
-                      lng: day.hotel?.lng || 0,
-                      description: 'Explore nearby attractions or restaurants.',
-                      estimatedCost: 0,
-                      transport: 'walk',
-                      address: day.hotel?.address || '',
-                    },
-                  ];
-                }
-                return block;
-              });
-            }
+            // Backend should always provide options, so no frontend fallback needed
+            // If blocks have no options, it means backend processing failed
             return day;
           });
           return v;
